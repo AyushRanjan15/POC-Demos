@@ -1,0 +1,313 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Redenlab Globe Avatar — all animation keyframes ── */
+.rl-state-idle .rl-sphere       { animation: rlScale 3.5s ease-in-out infinite; }
+.rl-state-idle .rl-aura         { animation: rlGlow  3.5s ease-in-out infinite; }
+.rl-state-idle .rl-bar-u        { animation: rlBarSlow 3.5s ease-in-out infinite; }
+.rl-state-idle .rl-bar-d        { animation: rlBarSlow 3.5s ease-in-out infinite 0.3s; }
+
+.rl-state-speaking .rl-sphere   { animation: rlScaleFast 0.9s ease-in-out infinite; }
+.rl-state-speaking .rl-aura     { animation: rlGlowBright 0.9s ease-in-out infinite; }
+.rl-state-speaking .rl-bar-u    { animation: rlBarSpeak 0.45s ease-in-out infinite alternate; }
+.rl-state-speaking .rl-bar-d    { animation: rlBarSpeak 0.45s ease-in-out infinite alternate-reverse; }
+.rl-state-speaking .rl-globe-wrap { animation: rlFloat 1.8s ease-in-out infinite; }
+
+.rl-state-listening .rl-sphere  { animation: rlScaleFast 0.6s ease-in-out infinite; background: radial-gradient(circle at 34% 32%, #c4b5fd 0%, #8b5cf6 38%, #5b21b6 70%, #3b0764 100%) !important; }
+.rl-state-listening .rl-aura    { animation: rlGlowBright 0.6s ease-in-out infinite; }
+.rl-state-listening .rl-bar-u   { animation: rlBarListen 0.3s ease-in-out infinite alternate; }
+.rl-state-listening .rl-bar-d   { animation: rlBarListen 0.3s ease-in-out infinite alternate-reverse; }
+
+.rl-state-processing .rl-ring1  { animation: rlSpin1 1.6s linear infinite; display: block !important; }
+.rl-state-processing .rl-ring2  { animation: rlSpin2 2.4s linear infinite; display: block !important; }
+.rl-state-processing .rl-aura   { animation: rlGlow  2.4s ease-in-out infinite; }
+
+.rl-state-completed .rl-sphere  { animation: rlComplete 2.5s ease-out forwards; }
+.rl-state-completed .rl-aura    { animation: rlGlowFade 2.5s ease-out forwards; }
+
+@keyframes rlScale      { 0%,100%{transform:scale(1)}    50%{transform:scale(1.04)} }
+@keyframes rlScaleFast  { 0%,100%{transform:scale(1)}    50%{transform:scale(1.06)} }
+@keyframes rlComplete   { 0%{transform:scale(1)} 40%{transform:scale(1.09)} 100%{transform:scale(1)} }
+@keyframes rlFloat      { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+@keyframes rlGlow       { 0%,100%{opacity:0.6} 50%{opacity:0.9} }
+@keyframes rlGlowBright { 0%,100%{opacity:0.7} 50%{opacity:1}   }
+@keyframes rlGlowFade   { 0%{opacity:1}        100%{opacity:0.5} }
+@keyframes rlBarSlow    { 0%,100%{transform:scaleY(1)}    50%{transform:scaleY(1.12)} }
+@keyframes rlBarSpeak   { 0%{transform:scaleY(0.7)}  100%{transform:scaleY(1.5)} }
+@keyframes rlBarListen  { 0%{transform:scaleY(0.5)}  100%{transform:scaleY(1.8)} }
+@keyframes rlSpin1      { from{transform:rotate(0deg)}   to{transform:rotate(360deg)} }
+@keyframes rlSpin2      { from{transform:rotate(0deg)}   to{transform:rotate(-360deg)} }
+
+/* ── Landing page globe ── */
+.globe-wrap {
+  position: relative;
+  width: 130px; height: 130px;
+  display: flex; align-items: center; justify-content: center;
+  animation: globeFloat 4s ease-in-out infinite;
+}
+.globe-aura {
+  position: absolute;
+  width: 200px; height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(109,40,217,0.42) 0%, rgba(139,92,246,0.12) 55%, transparent 75%);
+  filter: blur(20px);
+  animation: globeGlow 3.5s ease-in-out infinite;
+}
+.globe-aura-outer {
+  position: absolute;
+  width: 230px; height: 230px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(139,92,246,0.12) 0%, transparent 65%);
+  filter: blur(28px);
+  animation: globeGlow 3.5s ease-in-out infinite 0.8s;
+}
+.globe-sphere {
+  position: relative;
+  width: 130px; height: 130px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 34% 32%, #a78bfa 0%, #7c22d2 42%, #4c1d95 72%, #2e1065 100%);
+  box-shadow: 0 0 44px 8px rgba(109,40,217,0.50), inset 0 0 28px rgba(0,0,0,0.32), 0 14px 32px rgba(0,0,0,0.30);
+  animation: globeScale 3.5s ease-in-out infinite;
+}
+.globe-shine {
+  position: absolute;
+  top: 8%; left: 13%;
+  width: 44%; height: 34%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 38% 38%, rgba(255,255,255,0.30), transparent 72%);
+  transform: rotate(-18deg);
+}
+.globe-bottom-shadow {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 28%;
+  background: linear-gradient(to top, rgba(0,0,0,0.30), transparent);
+}
+/* Each bar animates independently — staggered listening wave */
+.globe-bar { transform-box: fill-box; transform-origin: bottom center; }
+.globe-bar-0  { animation: gBar0  2.8s ease-in-out infinite; }
+.globe-bar-1  { animation: gBar1  2.4s ease-in-out infinite 0.1s; }
+.globe-bar-2  { animation: gBar2  3.1s ease-in-out infinite 0.2s; }
+.globe-bar-3  { animation: gBar3  2.6s ease-in-out infinite 0.05s; }
+.globe-bar-4  { animation: gBar4  2.9s ease-in-out infinite 0.15s; }
+.globe-bar-5  { animation: gBar5  2.3s ease-in-out infinite 0s; }
+.globe-bar-6  { animation: gBar4  2.9s ease-in-out infinite 0.18s; }
+.globe-bar-7  { animation: gBar3  2.6s ease-in-out infinite 0.08s; }
+.globe-bar-8  { animation: gBar2  3.1s ease-in-out infinite 0.22s; }
+.globe-bar-9  { animation: gBar1  2.4s ease-in-out infinite 0.12s; }
+.globe-bar-10 { animation: gBar0  2.8s ease-in-out infinite 0.05s; }
+.globe-bar-11 { animation: gBar3  2.6s ease-in-out infinite 0.1s; }
+.globe-bar-12 { animation: gBar1  2.4s ease-in-out infinite 0.08s; }
+
+@keyframes globeScale {
+  0%, 100% { transform: scale(1); }
+  45%       { transform: scale(1.07); }
+  55%       { transform: scale(1.07); }
+}
+@keyframes globeGlow {
+  0%, 100% { opacity: 0.65; transform: scale(1); }
+  50%       { opacity: 1.0;  transform: scale(1.12); }
+}
+@keyframes globeFloat {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-7px); }
+}
+@keyframes gBar0 { 0%,100%{transform:scaleY(1)}    40%{transform:scaleY(1.55)} 70%{transform:scaleY(0.75)} }
+@keyframes gBar1 { 0%,100%{transform:scaleY(0.85)} 35%{transform:scaleY(1.70)} 65%{transform:scaleY(0.65)} }
+@keyframes gBar2 { 0%,100%{transform:scaleY(1.1)}  50%{transform:scaleY(0.60)} 80%{transform:scaleY(1.45)} }
+@keyframes gBar3 { 0%,100%{transform:scaleY(0.9)}  30%{transform:scaleY(1.80)} 60%{transform:scaleY(0.70)} }
+@keyframes gBar4 { 0%,100%{transform:scaleY(1.05)} 45%{transform:scaleY(0.55)} 75%{transform:scaleY(1.60)} }
+@keyframes gBar5 { 0%,100%{transform:scaleY(0.8)}  25%{transform:scaleY(1.90)} 55%{transform:scaleY(0.65)} }
+
+/* ── NOVA Globe (V1.1) — Redenlab brand palette ── */
+/* Primary #633269 · Forest green #003d20 · Teal #003941 */
+.nova-wrap {
+  position: relative;
+  width: 190px; height: 190px;
+  display: flex; align-items: center; justify-content: center;
+  animation: novaFloat 4.2s ease-in-out infinite;
+}
+.nova-aura-outer {
+  position: absolute;
+  width: 340px; height: 340px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(139,92,246,0.14) 0%, transparent 68%);
+  filter: blur(28px);
+  animation: novaGlow 4.5s ease-in-out infinite 0.9s;
+}
+.nova-aura {
+  position: absolute;
+  width: 270px; height: 270px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(109,40,217,0.48) 0%, rgba(139,92,246,0.14) 52%, transparent 72%);
+  filter: blur(20px);
+  animation: novaGlow 3.6s ease-in-out infinite;
+}
+.nova-sphere {
+  position: relative;
+  width: 190px; height: 190px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  /* V1.0 sphere palette — vivid violet, rich and bright */
+  background: radial-gradient(circle at 34% 32%, #a78bfa 0%, #7c22d2 42%, #4c1d95 72%, #2e1065 100%);
+  box-shadow:
+    0 0 44px 10px rgba(109,40,217,0.55),
+    inset 0 0 32px rgba(0,0,0,0.28),
+    0 16px 36px rgba(0,0,0,0.28);
+  animation: novaScale 3.6s ease-in-out infinite;
+}
+.nova-shine {
+  position: absolute;
+  top: 6%; left: 9%;
+  width: 42%; height: 34%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 38% 38%, rgba(255,255,255,0.38) 0%, rgba(216,180,254,0.12) 55%, transparent 75%);
+  transform: rotate(-20deg);
+  pointer-events: none;
+}
+.nova-ring {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(216,180,254,0.30);
+  pointer-events: none;
+}
+
+/* Bar transform origins */
+.nova-bar-u { transform-box: fill-box; transform-origin: 50% 100%; }
+.nova-bar-l { transform-box: fill-box; transform-origin: 50% 0%; }
+
+/* ── IDLE: slow gentle breathe (landing page) ── */
+.nova-b0  { animation: nBar2 4.40s ease-in-out infinite 0.00s; }
+.nova-b1  { animation: nBar0 5.60s ease-in-out infinite 0.30s; }
+.nova-b2  { animation: nBar3 4.10s ease-in-out infinite 0.60s; }
+.nova-b3  { animation: nBar1 6.20s ease-in-out infinite 0.16s; }
+.nova-b4  { animation: nBar0 4.80s ease-in-out infinite 0.44s; }
+.nova-b5  { animation: nBar2 3.80s ease-in-out infinite 0.20s; }
+.nova-b6  { animation: nBar1 5.20s ease-in-out infinite 0.56s; }
+.nova-b7  { animation: nBar3 4.20s ease-in-out infinite 0.10s; }
+.nova-b8  { animation: nBar0 5.40s ease-in-out infinite 0.36s; }
+.nova-b9  { animation: nBar2 4.60s ease-in-out infinite 0.24s; }
+.nova-b10 { animation: nBar3 5.80s ease-in-out infinite 0.48s; }
+.nova-b11 { animation: nBar1 4.00s ease-in-out infinite 0.14s; }
+.nova-b12 { animation: nBar0 5.00s ease-in-out infinite 0.32s; }
+.nova-b13 { animation: nBar2 4.40s ease-in-out infinite 0.64s; }
+
+/* ── IDLE inside task pages: even slower, very calm ── */
+.nova-state-idle .nova-b0  { animation: nBar2 6.0s ease-in-out infinite 0.00s; }
+.nova-state-idle .nova-b1  { animation: nBar0 7.5s ease-in-out infinite 0.40s; }
+.nova-state-idle .nova-b2  { animation: nBar3 5.5s ease-in-out infinite 0.80s; }
+.nova-state-idle .nova-b3  { animation: nBar1 8.0s ease-in-out infinite 0.20s; }
+.nova-state-idle .nova-b4  { animation: nBar0 6.5s ease-in-out infinite 0.60s; }
+.nova-state-idle .nova-b5  { animation: nBar2 5.0s ease-in-out infinite 0.25s; }
+.nova-state-idle .nova-b6  { animation: nBar1 7.0s ease-in-out infinite 0.70s; }
+.nova-state-idle .nova-b7  { animation: nBar3 5.8s ease-in-out infinite 0.12s; }
+.nova-state-idle .nova-b8  { animation: nBar0 7.2s ease-in-out infinite 0.50s; }
+.nova-state-idle .nova-b9  { animation: nBar2 6.2s ease-in-out infinite 0.30s; }
+.nova-state-idle .nova-b10 { animation: nBar3 7.8s ease-in-out infinite 0.65s; }
+.nova-state-idle .nova-b11 { animation: nBar1 5.5s ease-in-out infinite 0.18s; }
+.nova-state-idle .nova-b12 { animation: nBar0 6.8s ease-in-out infinite 0.42s; }
+.nova-state-idle .nova-b13 { animation: nBar2 6.0s ease-in-out infinite 0.85s; }
+.nova-state-idle .nova-wrap   { animation: novaFloat 6.0s ease-in-out infinite; }
+.nova-state-idle .nova-sphere { animation: novaScale 6.0s ease-in-out infinite; }
+.nova-state-idle .nova-aura   { animation: novaGlow  6.0s ease-in-out infinite; }
+
+/* ── Task page: suppress bounce on all non-speaking/listening states ── */
+.nova-task.nova-state-idle .nova-wrap        { animation: none; }
+.nova-task.nova-state-completed .nova-wrap   { animation: none; }
+.nova-task.nova-state-processing .nova-wrap  { animation: none; }
+/* Speaking and listening keep their float — it signals activity */
+.nova-task.nova-state-speaking .nova-wrap    { animation: novaFloat 2.0s ease-in-out infinite; }
+.nova-task.nova-state-listening .nova-wrap   { animation: novaFloat 1.2s ease-in-out infinite; }
+
+/* Sparkle dots */
+.nova-sp0 { animation: novaTwinkle 2.5s ease-in-out infinite 0.0s; }
+.nova-sp1 { animation: novaTwinkle 3.0s ease-in-out infinite 0.5s; }
+.nova-sp2 { animation: novaTwinkle 2.2s ease-in-out infinite 1.0s; }
+.nova-sp3 { animation: novaTwinkle 2.8s ease-in-out infinite 0.3s; }
+.nova-sp4 { animation: novaTwinkle 2.4s ease-in-out infinite 0.8s; }
+.nova-sp5 { animation: novaTwinkle 3.2s ease-in-out infinite 1.5s; }
+
+/* ── SPEAKING: fast alternating bars, bright float ── */
+.nova-state-speaking .nova-wrap          { animation: novaFloat 1.4s ease-in-out infinite; }
+.nova-state-speaking .nova-aura          { animation: novaGlow  0.8s ease-in-out infinite; }
+.nova-state-speaking .nova-sphere        { animation: novaScale 0.8s ease-in-out infinite; }
+.nova-state-speaking .nova-b0  { animation: nBarSpeak 0.38s ease-in-out infinite alternate 0.00s; }
+.nova-state-speaking .nova-b1  { animation: nBarSpeak 0.42s ease-in-out infinite alternate-reverse 0.04s; }
+.nova-state-speaking .nova-b2  { animation: nBarSpeak 0.35s ease-in-out infinite alternate 0.08s; }
+.nova-state-speaking .nova-b3  { animation: nBarSpeak 0.44s ease-in-out infinite alternate-reverse 0.02s; }
+.nova-state-speaking .nova-b4  { animation: nBarSpeak 0.36s ease-in-out infinite alternate 0.06s; }
+.nova-state-speaking .nova-b5  { animation: nBarSpeak 0.40s ease-in-out infinite alternate-reverse 0.10s; }
+.nova-state-speaking .nova-b6  { animation: nBarSpeak 0.33s ease-in-out infinite alternate 0.01s; }
+.nova-state-speaking .nova-b7  { animation: nBarSpeak 0.45s ease-in-out infinite alternate-reverse 0.05s; }
+.nova-state-speaking .nova-b8  { animation: nBarSpeak 0.37s ease-in-out infinite alternate 0.09s; }
+.nova-state-speaking .nova-b9  { animation: nBarSpeak 0.41s ease-in-out infinite alternate-reverse 0.03s; }
+.nova-state-speaking .nova-b10 { animation: nBarSpeak 0.34s ease-in-out infinite alternate 0.07s; }
+.nova-state-speaking .nova-b11 { animation: nBarSpeak 0.43s ease-in-out infinite alternate-reverse 0.11s; }
+.nova-state-speaking .nova-b12 { animation: nBarSpeak 0.39s ease-in-out infinite alternate 0.02s; }
+.nova-state-speaking .nova-b13 { animation: nBarSpeak 0.36s ease-in-out infinite alternate-reverse 0.06s; }
+
+/* ── LISTENING: very fast reactive bars, sphere brightens ── */
+.nova-state-listening .nova-wrap         { animation: novaFloat 1.0s ease-in-out infinite; }
+.nova-state-listening .nova-aura         { animation: novaGlow  0.5s ease-in-out infinite; }
+.nova-state-listening .nova-sphere       { animation: novaScale 0.5s ease-in-out infinite; background: radial-gradient(circle at 34% 32%, #c4b5fd 0%, #8b5cf6 38%, #5b21b6 70%, #3b0764 100%) !important; }
+.nova-state-listening .nova-b0  { animation: nBarListen 0.22s ease-in-out infinite alternate 0.00s; }
+.nova-state-listening .nova-b1  { animation: nBarListen 0.26s ease-in-out infinite alternate-reverse 0.03s; }
+.nova-state-listening .nova-b2  { animation: nBarListen 0.20s ease-in-out infinite alternate 0.06s; }
+.nova-state-listening .nova-b3  { animation: nBarListen 0.28s ease-in-out infinite alternate-reverse 0.01s; }
+.nova-state-listening .nova-b4  { animation: nBarListen 0.24s ease-in-out infinite alternate 0.05s; }
+.nova-state-listening .nova-b5  { animation: nBarListen 0.21s ease-in-out infinite alternate-reverse 0.08s; }
+.nova-state-listening .nova-b6  { animation: nBarListen 0.27s ease-in-out infinite alternate 0.02s; }
+.nova-state-listening .nova-b7  { animation: nBarListen 0.23s ease-in-out infinite alternate-reverse 0.04s; }
+.nova-state-listening .nova-b8  { animation: nBarListen 0.25s ease-in-out infinite alternate 0.07s; }
+.nova-state-listening .nova-b9  { animation: nBarListen 0.19s ease-in-out infinite alternate-reverse 0.02s; }
+.nova-state-listening .nova-b10 { animation: nBarListen 0.29s ease-in-out infinite alternate 0.05s; }
+.nova-state-listening .nova-b11 { animation: nBarListen 0.22s ease-in-out infinite alternate-reverse 0.09s; }
+.nova-state-listening .nova-b12 { animation: nBarListen 0.24s ease-in-out infinite alternate 0.03s; }
+.nova-state-listening .nova-b13 { animation: nBarListen 0.21s ease-in-out infinite alternate-reverse 0.06s; }
+
+/* ── PROCESSING: spinning rings, bars slow pulse ── */
+.nova-state-processing .nova-ring1 { animation: novaRing1 1.6s linear infinite; display: block !important; }
+.nova-state-processing .nova-ring2 { animation: novaRing2 2.4s linear infinite; display: block !important; }
+.nova-state-processing .nova-aura  { animation: novaGlow  2.4s ease-in-out infinite; }
+
+/* ── COMPLETED: bright flash then settle ── */
+.nova-state-completed .nova-sphere { animation: novaComplete 2.5s ease-out forwards; }
+.nova-state-completed .nova-aura   { animation: novaGlowFade 2.5s ease-out forwards; }
+
+@keyframes novaFloat    { 0%,100%{transform:translateY(0)}         50%{transform:translateY(-9px)} }
+@keyframes novaScale    { 0%,100%{transform:scale(1)}               50%{transform:scale(1.035)} }
+@keyframes novaGlow     { 0%,100%{opacity:0.65;transform:scale(1)}  50%{opacity:1;transform:scale(1.12)} }
+@keyframes novaGlowFade { 0%{opacity:1}                             100%{opacity:0.5} }
+@keyframes novaTwinkle  { 0%,100%{opacity:0.2;transform:scale(0.7)} 50%{opacity:1;transform:scale(1.4)} }
+@keyframes novaComplete { 0%{transform:scale(1)} 40%{transform:scale(1.10)} 100%{transform:scale(1)} }
+@keyframes novaRing1    { from{transform:rotate(0deg)}   to{transform:rotate(360deg)} }
+@keyframes novaRing2    { from{transform:rotate(0deg)}   to{transform:rotate(-360deg)} }
+
+@keyframes nBar0     { 0%,100%{transform:scaleY(1)}    35%{transform:scaleY(1.55)} 68%{transform:scaleY(0.70)} }
+@keyframes nBar1     { 0%,100%{transform:scaleY(0.80)} 40%{transform:scaleY(1.65)} 62%{transform:scaleY(0.60)} }
+@keyframes nBar2     { 0%,100%{transform:scaleY(1.10)} 48%{transform:scaleY(0.55)} 78%{transform:scaleY(1.50)} }
+@keyframes nBar3     { 0%,100%{transform:scaleY(0.85)} 28%{transform:scaleY(1.75)} 58%{transform:scaleY(0.65)} }
+@keyframes nBarSpeak  { 0%{transform:scaleY(0.55)}  100%{transform:scaleY(1.80)} }
+@keyframes nBarListen { 0%{transform:scaleY(0.35)}  100%{transform:scaleY(2.10)} }
+
+@keyframes tap-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(124,58,237,0.55); transform: scale(1); }
+  60%  { box-shadow: 0 0 0 18px rgba(124,58,237,0); transform: scale(1.08); }
+  100% { box-shadow: 0 0 0 0 rgba(124,58,237,0);  transform: scale(1); }
+}

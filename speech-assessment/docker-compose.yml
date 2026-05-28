@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  # ── NOVA frontend ─────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000   # change for production
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  # ── Analytics backend (placeholder — replace with your real image/build) ──
+  backend:
+    build:
+      context: ./backend          # point to your backend repo/directory
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      - audio_uploads:/tmp/uploads   # optional: persist raw audio recordings
+
+volumes:
+  audio_uploads:

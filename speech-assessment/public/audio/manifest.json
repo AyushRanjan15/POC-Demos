@@ -1,0 +1,31 @@
+{
+  "voice": "bf_isabella",
+  "speed": 0.95,
+  "clips": [
+    {
+      "id": "intro_greeting",
+      "file": "intro_greeting.wav",
+      "text": "Hello! I'm Nova, your assessment guide. Today we'll complete 3 short speech tasks together. Speak naturally — there are no right or wrong answers."
+    },
+    {
+      "id": "task_days_of_week",
+      "file": "task_days_of_week.wav",
+      "text": "Can you tell me the days of the week? Please name all seven days, beginning with the very first day of the week and continuing until the last. Take your time and speak clearly. When you are ready, press the record button."
+    },
+    {
+      "id": "task_ddk",
+      "file": "task_pataka.wav",
+      "text": "Please repeat the syllables PA, TA, KA as fast and as clearly as you can for about 5 seconds. When you are ready, press the record button."
+    },
+    {
+      "id": "task_picture_description",
+      "file": "task_picture_description.wav",
+      "text": "You will see a picture on screen. Please describe everything you see in as much detail as possible — the people, what they are doing, and anything else you notice. Take your time and speak naturally. When you are ready, press the record button."
+    },
+    {
+      "id": "processing",
+      "file": "processing.wav",
+      "text": "Thank you. I'm now analysing your speech recordings. This will only take a moment."
+    }
+  ]
+}
