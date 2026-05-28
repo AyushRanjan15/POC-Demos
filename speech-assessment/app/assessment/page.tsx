@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { TASKS } from "@/lib/tasks";
 import { speak, speakImmediate, stopSpeaking, unlockAudio, preloadAll, isSpeaking, setOnEnd } from "@/lib/tts";
 import { processAudio } from "@/lib/api";
+import { getIdToken, isAuthConfigured, redirectToLogin } from "@/lib/auth";
+import { isApiConfigured } from "@/lib/inferenceClient";
 import { SessionInfo, TaskRecording, TaskResult, SessionResults } from "@/types";
 import Avatar, { AvatarState } from "@/components/Avatar";
 import TaskCard from "@/components/TaskCard";
@@ -24,29 +26,56 @@ export default function AssessmentPage() {
   const inferencePromises = useRef<Map<string, Promise<TaskResult>>>(new Map());
 
   useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
-    setParticipantId(p.get("participantId") || "");
-    setSessionId(p.get("sessionId") || "");
+    let cancelled = false;
 
-    // Pre-decode all audio clips — works on suspended AudioContext (no gesture needed).
-    // Once buffers are in cache, speakImmediate() can play them synchronously inside
-    // any button handler without an async gap — the iOS gesture-window requirement.
-    preloadAll();
+    async function init() {
+      const p = new URLSearchParams(window.location.search);
+      const participant = p.get("participantId") || "";
+      const session = p.get("sessionId") || "";
+      setParticipantId(participant);
+      setSessionId(session);
 
-    if (isSpeaking()) {
-      // Audio started from landing-page gesture — attach avatar callback only.
-      setAvatarState("speaking");
-      setOnEnd(() => setAvatarState("idle"));
-      return () => stopSpeaking();
+      if (isApiConfigured()) {
+        if (!isAuthConfigured()) {
+          throw new Error("Missing auth config: NEXT_PUBLIC_COGNITO_DOMAIN / NEXT_PUBLIC_COGNITO_CLIENT_ID");
+        }
+        if (!getIdToken()) {
+          await redirectToLogin(window.location.pathname + window.location.search);
+          return;
+        }
+      }
+
+      // Pre-decode all audio clips — works on suspended AudioContext (no gesture needed).
+      // Once buffers are in cache, speakImmediate() can play them synchronously inside
+      // any button handler without an async gap — the iOS gesture-window requirement.
+      preloadAll();
+
+      if (isSpeaking()) {
+        // Audio started from landing-page gesture — attach avatar callback only.
+        setAvatarState("speaking");
+        setOnEnd(() => setAvatarState("idle"));
+        return;
+      }
+
+      // Desktop: AudioContext is already running, speak() works from async context.
+      // iOS: context is suspended until a gesture — user must tap globe or button.
+      speak(INTRO_TEXT, () => setAvatarState("idle")).then(() => {
+        if (!cancelled) setAvatarState("speaking");
+      }).catch(() => {});
     }
 
-    // Desktop: AudioContext is already running, speak() works from async context.
-    // iOS: context is suspended until a gesture — user must tap globe or button.
-    speak(INTRO_TEXT, () => setAvatarState("idle")).then(() => {
-      setAvatarState("speaking");
+    init().catch((err) => {
+      const message = err instanceof Error ? err.message : "Authentication initialization failed";
+      console.error("[assessment/init] error:", message);
+      setStatus(message);
+      setPhase("processing");
+      setAvatarState("idle");
     });
 
-    return () => stopSpeaking();
+    return () => {
+      cancelled = true;
+      stopSpeaking();
+    };
   }, []);
 
   function handleStartTasks() {

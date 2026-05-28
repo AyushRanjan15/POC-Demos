@@ -1,8 +1,10 @@
 import { TaskMetrics, TaskName, DaysMetrics, DDKMetrics, PictureMetrics } from "@/types";
+import { isApiConfigured, resolveWhisperxResult, runModel, uploadAudio } from "@/lib/inferenceClient";
+import { mapDDK, mapDaysOfWeek, mapPictureDescription } from "@/lib/metricsMapper";
 
-// When set to any non-empty value, real inference is used via /api/process-audio.
+// When set to any non-empty value, real inference is used via API Gateway routes.
 // Leave blank to run in demo mode (random simulated metrics, no backend required).
-const USE_REAL_API = Boolean(process.env.NEXT_PUBLIC_API_BASE_URL);
+const USE_REAL_API = isApiConfigured();
 
 export async function processAudio(
   blob: Blob,
@@ -13,21 +15,36 @@ export async function processAudio(
     return simulateMetrics(taskId);
   }
 
-  const formData = new FormData();
-  formData.append("audio", blob, filename);
-  formData.append("task", taskId);
+  const buffer = await blob.arrayBuffer();
+  const assetId = await uploadAudio(buffer, filename);
 
-  const response = await fetch("/api/process-audio", {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(`Inference error (${response.status}): ${err.error ?? response.statusText}`);
+  if (taskId === "days_of_week") {
+    const [huperRaw, whisperxRaw] = await Promise.all([
+      runModel("huper-phoneme-pipeline", assetId),
+      runModel("whisperx", assetId),
+    ]);
+    const whisperxData = await resolveWhisperxResult(whisperxRaw);
+    return mapDaysOfWeek(huperRaw, whisperxData);
   }
 
-  return response.json();
+  if (taskId === "ddk") {
+    const [huperRaw, sylberRaw] = await Promise.all([
+      runModel("huper-phoneme-pipeline", assetId),
+      runModel("sylber-time", assetId),
+    ]);
+    return mapDDK(huperRaw, sylberRaw);
+  }
+
+  if (taskId === "picture_description") {
+    const [intelligibilityRaw, naturalnessRaw, sylberRaw] = await Promise.all([
+      runModel("als-intelligibility-mtpa", assetId),
+      runModel("als-naturalness-mtpa", assetId),
+      runModel("sylber-time", assetId),
+    ]);
+    return mapPictureDescription(intelligibilityRaw, naturalnessRaw, sylberRaw);
+  }
+
+  throw new Error(`Unknown task: ${taskId}`);
 }
 
 function r(min: number, max: number) { return Math.random() * (max - min) + min; }

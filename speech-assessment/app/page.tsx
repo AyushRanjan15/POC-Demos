@@ -4,10 +4,48 @@
 // navigating, enabling auto-play on the assessment page (iOS requirement).
 
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { speak, unlockAudio } from "@/lib/tts";
+import { getIdToken, handleAuthCallback, isAuthConfigured, redirectToLogin } from "@/lib/auth";
+import { isApiConfigured } from "@/lib/inferenceClient";
 
 export default function HomePage() {
   const router = useRouter();
+  const [authReady, setAuthReady] = useState(!isApiConfigured());
+
+  useEffect(() => {
+    if (!isApiConfigured()) return;
+
+    let mounted = true;
+    async function initAuth() {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      const state = params.get("state");
+
+      if (!isAuthConfigured()) {
+        throw new Error("Missing auth config: NEXT_PUBLIC_COGNITO_DOMAIN / NEXT_PUBLIC_COGNITO_CLIENT_ID");
+      }
+
+      if (code) {
+        await handleAuthCallback(code, state);
+      } else if (!getIdToken()) {
+        await redirectToLogin(window.location.pathname + window.location.search);
+        return;
+      }
+
+      if (mounted) setAuthReady(true);
+    }
+
+    initAuth().catch((err) => {
+      const message = err instanceof Error ? err.message : "Authentication initialization failed";
+      console.error("[home/init] error:", message);
+      if (mounted) setAuthReady(true);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const BARS = [
     { hu: 6,  hl: 3  },
@@ -62,6 +100,15 @@ export default function HomePage() {
 
     router.push(
       `/assessment?participantId=${encodeURIComponent(participantId)}&sessionId=${encodeURIComponent(sessionId)}`
+    );
+  }
+
+  if (!authReady) {
+    return (
+      <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f5f3ff" }}>
+        <div style={{ width: 40, height: 40, borderRadius: "50%", border: "3px solid #e9d5ff", borderTopColor: "#7c3aed", animation: "spin 0.8s linear infinite" }} />
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      </main>
     );
   }
 
