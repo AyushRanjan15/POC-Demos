@@ -1,28 +1,4 @@
-/**
- * Maps raw ML model outputs from the Intelligens API to the TaskMetrics
- * shapes the frontend expects (DaysMetrics, DDKMetrics, PictureMetrics).
- *
- * Model outputs (from example responses):
- *   als-intelligibility-mtpa  → { result: { intelligibility_score: 0–200 } }
- *   als-naturalness-mtpa      → { result: { naturalness_score: 0–200 } }
- *   sylber-time               → { result: { SYL_COUNT, SYL_PERSEC, ARATE, P_MEAN, P_COV, P_PERCENT, DUR, ... } }
- *   huper-phoneme-pipeline    → { result: { intervals: [{phone, phone_start, phone_end}] } }
- *   whisperx                  → { result: { word_segments: [{word, score}], segments: [...] } }
- */
-
-import type { DaysMetrics, DDKMetrics, PictureMetrics } from "@/types";
-
-// ─── Utilities ────────────────────────────────────────────────────────────────
-
-function clamp(n: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, n));
-}
-
-function rnd(n: number, d = 2) {
-  return Math.round(n * 10 ** d) / 10 ** d;
-}
-
-// ─── WhisperX helpers ─────────────────────────────────────────────────────────
+import type { DDKMetrics, DaysMetrics, PictureMetrics } from "@/types";
 
 interface WordSegment {
   word: string;
@@ -32,16 +8,87 @@ interface WordSegment {
   speaker?: string;
 }
 
+interface PhonemeInterval {
+  phone: string;
+  phone_start: number;
+  phone_end: number;
+}
+
+interface SylberSegment {
+  syllable_id?: number;
+  start: number;
+  end: number;
+}
+
+interface SylberResult {
+  DUR?: number;
+  SYL_PERSEC?: number;
+  SYL_DUR_MEAN?: number;
+  SYL_DUR_COV?: number;
+  segments?: SylberSegment[];
+}
+
+const DAYS_REF_WORDS = [
+  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+];
+
+const DAYS_REF_PHONES_FLAT = [
+  "M", "AH", "N", "D", "EY",
+  "T", "UW", "Z", "D", "EY",
+  "W", "EH", "N", "Z", "D", "EY",
+  "TH", "ER", "Z", "D", "EY",
+  "F", "R", "AY", "D", "EY",
+  "S", "AE", "T", "ER", "D", "EY",
+  "S", "AH", "N", "D", "EY",
+];
+
+const PATAKA_CYCLE = ["P", "AH", "T", "AH", "K", "AH"] as const;
+const PER_CLEAN_THRESH = 0.15;
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function rnd(n: number, d = 2): number {
+  return Math.round(n * 10 ** d) / 10 ** d;
+}
+
+function cleanWord(w: string): string {
+  return w.toLowerCase().replace(/[^\w]/g, "");
+}
+
+function editDistance(a: string[], b: string[]): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[] = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = temp;
+    }
+  }
+  return dp[n];
+}
+
+function extractScore(data: unknown, key: string): number {
+  const result = (data as Record<string, unknown>)?.result as Record<string, number> | undefined;
+  return result?.[key] ?? 0;
+}
+
 export function extractWords(whisperxData: unknown): WordSegment[] {
-  const result = (whisperxData as Record<string, unknown>)?.result as
-    | Record<string, unknown>
-    | undefined;
+  const result = (whisperxData as Record<string, unknown>)?.result as Record<string, unknown> | undefined;
   if (!result) return [];
 
-  // word_segments is a flat array at the top level
   if (Array.isArray(result.word_segments)) return result.word_segments as WordSegment[];
 
-  // Older format: word_segments nested inside segments[].words
+  if (Array.isArray(result.segments) && result.segments.length > 0) {
+    const first = result.segments[0] as { words?: WordSegment[] };
+    if (Array.isArray(first.words)) return first.words;
+  }
+
   if (Array.isArray(result.segments)) {
     const words: WordSegment[] = [];
     for (const seg of result.segments as Array<{ words?: WordSegment[] }>) {
@@ -53,194 +100,141 @@ export function extractWords(whisperxData: unknown): WordSegment[] {
   return [];
 }
 
-// ─── Huper helpers ────────────────────────────────────────────────────────────
-
-interface PhonemeInterval {
-  phone: string;
-  phone_start: number;
-  phone_end: number;
-}
-
 export function extractIntervals(huperData: unknown): PhonemeInterval[] {
-  const result = (huperData as Record<string, unknown>)?.result as
-    | Record<string, unknown>
-    | undefined;
+  const result = (huperData as Record<string, unknown>)?.result as Record<string, unknown> | undefined;
   if (!result || !Array.isArray(result.intervals)) return [];
   return result.intervals as PhonemeInterval[];
 }
 
-// ─── Sylber helpers ───────────────────────────────────────────────────────────
-
-interface SylberResult {
-  STATUS: string;
-  DUR: number;
-  SYL_COUNT: number;
-  SYL_PERSEC: number;
-  SYL_PER_MEAN: number;
-  SYL_DUR_MEAN: number;
-  P_MEAN: number;
-  P_STD: number;
-  P_COV: number;
-  SPEECH_PERCENT: number;
-  P_PERCENT: number;
-  ARATE: number;
-  segments?: Array<{ syllable_id: number; start: number; end: number }>;
-}
-
 export function extractSylber(sylberData: unknown): SylberResult | null {
-  const result = (sylberData as Record<string, unknown>)?.result as
-    | SylberResult
-    | undefined;
+  const result = (sylberData as Record<string, unknown>)?.result as SylberResult | undefined;
   return result ?? null;
 }
 
-// ─── WER ─────────────────────────────────────────────────────────────────────
-
-function wordErrorRate(hypothesis: string[], reference: string[]): number {
-  const n = reference.length;
-  const m = hypothesis.length;
-  if (n === 0) return m > 0 ? 1 : 0;
-
-  const dp: number[][] = Array.from({ length: n + 1 }, (_, i) =>
-    Array.from({ length: m + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+export function mapDaysOfWeek(huperData: unknown, whisperxData: unknown): DaysMetrics {
+  const words = extractWords(whisperxData);
+  const hypWords = words.map((w) => cleanWord(w.word)).filter(Boolean);
+  const wer = rnd(
+    Math.min(editDistance(DAYS_REF_WORDS, hypWords) / Math.max(DAYS_REF_WORDS.length, 1), 1),
+    4
   );
 
-  for (let i = 1; i <= n; i++) {
-    for (let j = 1; j <= m; j++) {
-      dp[i][j] =
-        reference[i - 1] === hypothesis[j - 1]
-          ? dp[i - 1][j - 1]
-          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-    }
-  }
-
-  return clamp(dp[n][m] / n, 0, 1);
-}
-
-function normalizeWord(w: string): string {
-  return w.toLowerCase().replace(/[^a-z]/g, "");
-}
-
-// ─── days_of_week ─────────────────────────────────────────────────────────────
-
-const DAYS_REFERENCE = [
-  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
-];
-
-// Approximate CMU-dict phoneme counts per day (used for phoneme ER estimation)
-const DAYS_PHONEME_COUNT = 46; // sum: 5+7+7+5+5+7+5 = 41 + a bit more
-
-export function mapDaysOfWeek(
-  huperData: unknown,
-  whisperxData: unknown
-): DaysMetrics {
-  const words = extractWords(whisperxData);
-  const hypothesis = words.map((w) => normalizeWord(w.word)).filter(Boolean);
-  const wer = rnd(wordErrorRate(hypothesis, DAYS_REFERENCE));
-
   const intervals = extractIntervals(huperData);
-  let phonemeErrorRate: number;
-
-  if (intervals.length > 0) {
-    // Compare recognized phoneme count to expected — a simple count-based proxy
-    const recognized = intervals.length;
-    const expected = DAYS_PHONEME_COUNT;
-    const countDiff = Math.abs(recognized - expected) / expected;
-    // Average the count-based diff with WER to account for substitution errors
-    phonemeErrorRate = rnd(clamp((countDiff + wer) / 2, 0, 1));
-  } else {
-    // No huper result — estimate from WER
-    phonemeErrorRate = rnd(clamp(wer * 0.85, 0, 1));
-  }
+  const hypPhones = intervals.map((seg) => seg.phone.toUpperCase());
+  const per = rnd(
+    Math.min(editDistance(DAYS_REF_PHONES_FLAT, hypPhones) / Math.max(DAYS_REF_PHONES_FLAT.length, 1), 1),
+    4
+  );
 
   return {
     wer,
-    phonemeErrorRate,
-    wordAccuracy: rnd(clamp((1 - wer) * 100, 0, 100), 1),
-    phonemeAccuracy: rnd(clamp((1 - phonemeErrorRate) * 100, 0, 100), 1),
+    phonemeErrorRate: per,
+    wordAccuracy: rnd((1 - wer) * 100, 1),
+    phonemeAccuracy: rnd((1 - per) * 100, 1),
   };
 }
 
-// ─── ddk ─────────────────────────────────────────────────────────────────────
+function parsePatakaPhones(phones: string[]): {
+  nAttempts: number;
+  perPerCycle: number[];
+  perByPosAccuracy: number[];
+} {
+  if (!phones.length) {
+    return { nAttempts: 0, perPerCycle: [], perByPosAccuracy: [0, 0, 0, 0, 0, 0] };
+  }
 
-// Expected ARPABET phonemes at each PATAKA position: P, A, T, A, K, A
-const DDK_PHONES_BY_POS: string[][] = [
-  ["P", "B"],                        // 0  P
-  ["AH", "AA", "AE", "AY", "AO"],   // 1  A
-  ["T", "D", "DX"],                  // 2  T
-  ["AH", "AA", "AE", "AY", "AO"],   // 3  A
-  ["K", "G"],                        // 4  K
-  ["AH", "AA", "AE", "AY", "AO"],   // 5  A
-];
+  const cycles: string[][] = [];
+  for (let i = 0; i < phones.length; i += 6) {
+    const c = phones.slice(i, i + 6);
+    if (c.length >= 3) cycles.push(c);
+  }
 
-function ddkPhonemeAccuracyByPos(intervals: PhonemeInterval[]): number[] {
-  if (intervals.length === 0) return Array(6).fill(0);
+  const perPerCycle: number[] = [];
+  const errorsByPos: number[][] = [[], [], [], [], [], []];
 
-  const counts = Array(6).fill(0);
-  const hits = Array(6).fill(0);
-
-  intervals.forEach((iv, i) => {
-    const pos = i % 6;
-    counts[pos]++;
-    if (DDK_PHONES_BY_POS[pos].includes(iv.phone.toUpperCase())) {
-      hits[pos]++;
+  for (const cyc of cycles) {
+    const padded = [...cyc, "", "", "", "", "", ""].slice(0, 6);
+    let errors = 0;
+    for (let i = 0; i < 6; i++) {
+      const mismatch = padded[i] !== PATAKA_CYCLE[i];
+      if (mismatch) errors += 1;
+      errorsByPos[i].push(mismatch ? 1 : 0);
     }
-  });
+    perPerCycle.push(rnd(errors / 6, 4));
+  }
 
-  return Array.from({ length: 6 }, (_, pos) =>
-    rnd(counts[pos] > 0 ? clamp((hits[pos] / counts[pos]) * 100, 0, 100) : 0, 1)
+  const perByPosAccuracy = errorsByPos.map((arr) =>
+    arr.length ? rnd((1 - arr.reduce((a, b) => a + b, 0) / arr.length) * 100, 1) : 0
   );
+
+  return { nAttempts: cycles.length, perPerCycle, perByPosAccuracy };
+}
+
+function bestCleanRate(syllables: SylberSegment[], cleanMask: boolean[]): number {
+  if (!syllables.length || !cleanMask.some(Boolean)) return 0;
+
+  const lim = Math.min(syllables.length, cleanMask.length);
+  let best = 0;
+  let runStart: number | null = null;
+
+  const update = (s: number, e: number) => {
+    if (e <= s) return;
+    const dur = syllables[e].end - syllables[s].start;
+    if (dur > 0) best = Math.max(best, rnd((e - s + 1) / dur, 3));
+  };
+
+  for (let i = 0; i < lim; i++) {
+    if (cleanMask[i] && runStart === null) runStart = i;
+    else if (!cleanMask[i] && runStart !== null) {
+      update(runStart, i - 1);
+      runStart = null;
+    }
+  }
+  if (runStart !== null) update(runStart, lim - 1);
+
+  return best;
 }
 
 export function mapDDK(huperData: unknown, sylberData: unknown): DDKMetrics {
-  const sylber = extractSylber(sylberData);
   const intervals = extractIntervals(huperData);
+  const phones = intervals.map((seg) => seg.phone.toUpperCase());
+  const syl = extractSylber(sylberData) ?? {};
+  const syllables = Array.isArray(syl.segments) ? syl.segments : [];
 
-  const sylCount = sylber?.SYL_COUNT ?? 0;
-  const dur = Math.max(sylber?.DUR ?? 1, 0.1);
-  const pMean = sylber?.P_MEAN ?? 0;
-  const pCov = sylber?.P_COV ?? 0;
-
-  // PATAKA = 3 syllables per cycle
-  const nAttempts = Math.max(1, Math.round(sylCount / 3));
-
-  const phonemeAccuracyByPos = ddkPhonemeAccuracyByPos(intervals);
-  const meanPhonemeAcc = phonemeAccuracyByPos.reduce((s, v) => s + v, 0) / 6;
-  const cleanFrac = clamp(meanPhonemeAcc / 100, 0, 1);
-
-  const nClean = Math.round(nAttempts * cleanFrac);
-  const perEstimate = clamp(1 - cleanFrac, 0, 1);
-
-  const overallDdkRateCps = rnd(nAttempts / dur);
-  // Best clean rate is modestly faster than overall
-  const bestCleanDdkRateCps = rnd(overallDdkRateCps * clamp(1 + cleanFrac * 0.2, 1, 1.4));
-
-  // IOI (inter-onset interval): mean pause between syllables
-  const ioiMeanS =
-    pMean > 0 ? rnd(pMean) : rnd(Math.max(dur / Math.max(sylCount, 1) - (sylber?.SYL_DUR_MEAN ?? 0.2), 0.05));
+  const { nAttempts, perPerCycle, perByPosAccuracy } = parsePatakaPhones(phones);
+  const cleanMask = perPerCycle.map((p) => p <= PER_CLEAN_THRESH);
+  const nClean = cleanMask.filter(Boolean).length;
+  const cleanPers = perPerCycle.filter((_, i) => cleanMask[i]);
 
   return {
     nAttempts,
     nClean,
-    cleanRatePct: rnd((nClean / nAttempts) * 100, 1),
-    bestPer: rnd(perEstimate * 0.4),
-    meanPerAll: rnd(perEstimate),
-    meanPerClean: rnd(perEstimate * 0.5),
-    overallDdkRateCps,
-    bestCleanDdkRateCps,
-    ioiMeanS,
-    ioiCv: rnd(pCov),
-    phonemeAccuracyByPos,
+    cleanRatePct: nAttempts ? rnd((nClean / nAttempts) * 100, 1) : 0,
+    bestPer: rnd(Math.min(...(perPerCycle.length ? perPerCycle : [0])), 4),
+    meanPerAll: rnd(
+      perPerCycle.length ? perPerCycle.reduce((a, b) => a + b, 0) / perPerCycle.length : 0,
+      4
+    ),
+    meanPerClean: rnd(
+      cleanPers.length ? cleanPers.reduce((a, b) => a + b, 0) / cleanPers.length : 0,
+      4
+    ),
+    overallDdkRateCps: rnd(syl.SYL_PERSEC ?? 0, 3),
+    bestCleanDdkRateCps: bestCleanRate(syllables, cleanMask),
+    ioiMeanS: rnd(syl.SYL_DUR_MEAN ?? 0, 4),
+    ioiCv: rnd(syl.SYL_DUR_COV ?? 0, 4),
+    phonemeAccuracyByPos: perByPosAccuracy,
   };
 }
 
-// ─── picture_description ──────────────────────────────────────────────────────
-
-function extractScore(data: unknown, key: string): number {
-  const result = (data as Record<string, unknown>)?.result as
-    | Record<string, number>
-    | undefined;
-  return result?.[key] ?? 0;
+function computePauseRate(syllables: SylberSegment[], duration: number): number {
+  if (!syllables.length || duration <= 0) return 0;
+  const pauseThreshold = 0.15;
+  let pauses = 0;
+  for (let i = 1; i < syllables.length; i++) {
+    if (syllables[i].start - syllables[i - 1].end > pauseThreshold) pauses += 1;
+  }
+  return rnd(pauses / (duration / 60), 1);
 }
 
 export function mapPictureDescription(
@@ -248,28 +242,17 @@ export function mapPictureDescription(
   naturalnessData: unknown,
   sylberData: unknown
 ): PictureMetrics {
-  const sylber = extractSylber(sylberData);
+  const syl = extractSylber(sylberData) ?? {};
+  const syllables = Array.isArray(syl.segments) ? syl.segments : [];
+  const duration = syl.DUR ?? 0;
 
-  // Scores are 0–200 (sigmoid * target_max=200), normalize to 0–100
-  const rawIntell = extractScore(intelligibilityData, "intelligibility_score");
-  const rawNat = extractScore(naturalnessData, "naturalness_score");
-
-  const dur = Math.max(sylber?.DUR ?? 1, 0.1);
-  const sylCount = sylber?.SYL_COUNT ?? 0;
-  const arate = sylber?.ARATE ?? 0;
-  const pPercent = sylber?.P_PERCENT ?? 0;
-  const pMean = sylber?.P_MEAN ?? 0;
-
-  // Estimate number of pauses from total pause time and mean pause duration
-  const numPauses =
-    pPercent > 0 && pMean > 0
-      ? (pPercent / 100) * dur / pMean
-      : Math.max(0, sylCount - 1);
+  const intelRaw = extractScore(intelligibilityData, "intelligibility_score");
+  const natRaw = extractScore(naturalnessData, "naturalness_score");
 
   return {
-    intelligibilityScore: rnd(clamp(rawIntell / 2, 0, 100), 1),
-    naturalnessScore: rnd(clamp(rawNat / 2, 0, 100), 1),
-    speechRate: rnd(arate),
-    pauseRate: rnd((numPauses / dur) * 60, 1),
+    intelligibilityScore: rnd(clamp((intelRaw / 220) * 100, 0, 100), 1),
+    naturalnessScore: rnd(clamp((natRaw / 220) * 100, 0, 100), 1),
+    speechRate: rnd(syl.SYL_PERSEC ?? 0, 2),
+    pauseRate: computePauseRate(syllables, duration),
   };
 }
