@@ -12,6 +12,8 @@ interface PhonemeInterval {
   phone: string;
   phone_start: number;
   phone_end: number;
+  f1_hz?: number;
+  f2_hz?: number;
 }
 
 interface SylberSegment {
@@ -44,6 +46,23 @@ const DAYS_REF_PHONES_FLAT = [
 
 const PATAKA_CYCLE = ["P", "AH", "T", "AH", "K", "AH"] as const;
 const PER_CLEAN_THRESH = 0.15;
+const FILLERS = new Set(["um", "uh", "like", "so", "basically", "right", "okay", "actually"]);
+const FUNCTION_WORDS = new Set([
+  "the", "a", "an", "to", "of", "in", "on", "at", "for", "from", "with", "and", "or", "but", "if",
+  "that", "this", "these", "those", "is", "am", "are", "was", "were", "be", "been", "being", "do",
+  "does", "did", "have", "has", "had", "i", "you", "he", "she", "it", "we", "they", "me", "him",
+  "her", "us", "them", "my", "your", "his", "their", "our", "as", "by", "about", "into", "over",
+  "under", "after", "before", "while", "because", "than", "then", "so",
+]);
+const COMMON_VERBS = new Set([
+  "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did",
+  "go", "goes", "went", "see", "sees", "saw", "look", "looks", "looked", "stand", "stands", "stood",
+  "sit", "sits", "sat", "wash", "washes", "washed", "spill", "spills", "spilled", "reach", "reaches",
+  "reached", "watch", "watches", "watched", "notice", "notices", "noticed",
+]);
+const ARPABET_VOWELS = new Set([
+  "AA", "AE", "AH", "AO", "AW", "AY", "EH", "ER", "EY", "IH", "IY", "OW", "OY", "UH", "UW",
+]);
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
@@ -237,10 +256,163 @@ function computePauseRate(syllables: SylberSegment[], duration: number): number 
   return rnd(pauses / (duration / 60), 1);
 }
 
+function convexHull(points: Array<{ f1: number; f2: number }>): Array<{ f1: number; f2: number }> {
+  if (points.length < 3) return points;
+  const sorted = [...points].sort((a, b) => a.f2 - b.f2 || a.f1 - b.f1);
+  const cross = (o: { f1: number; f2: number }, a: { f1: number; f2: number }, b: { f1: number; f2: number }) =>
+    (a.f2 - o.f2) * (b.f1 - o.f1) - (a.f1 - o.f1) * (b.f2 - o.f2);
+  const lower: Array<{ f1: number; f2: number }> = [];
+  for (const p of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: Array<{ f1: number; f2: number }> = [];
+  for (const p of [...sorted].reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return [...lower, ...upper];
+}
+
+function polygonArea(points: Array<{ f1: number; f2: number }>): number {
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    area += points[i].f2 * points[j].f1 - points[j].f2 * points[i].f1;
+  }
+  return Math.abs(area) / 2;
+}
+
+function median(values: number[]): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function computeVsa(huperData?: unknown): Partial<PictureMetrics> {
+  const intervals = huperData ? extractIntervals(huperData) : [];
+  const vowelTokens = intervals.filter((s) =>
+    ARPABET_VOWELS.has(s.phone.toUpperCase()) &&
+    typeof s.f1_hz === "number" &&
+    typeof s.f2_hz === "number"
+  ) as Array<PhonemeInterval & { f1_hz: number; f2_hz: number }>;
+
+  if (!vowelTokens.length) {
+    return {
+      vsaHz2: null, nVowelTokens: 0, nVowelTypes: 0, vowelScatter: [], vowelMedians: [], hullPath: [],
+    };
+  }
+
+  const byPh = new Map<string, Array<{ f1: number; f2: number }>>();
+  for (const t of vowelTokens) {
+    const ph = t.phone.toUpperCase();
+    if (!byPh.has(ph)) byPh.set(ph, []);
+    byPh.get(ph)!.push({ f1: t.f1_hz, f2: t.f2_hz });
+  }
+
+  const vowelMedians: Array<{ phoneme: string; f1: number; f2: number }> = [];
+  for (const [ph, tokens] of [...byPh.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (tokens.length < 3) continue;
+    vowelMedians.push({
+      phoneme: ph,
+      f1: median(tokens.map((x) => x.f1)),
+      f2: median(tokens.map((x) => x.f2)),
+    });
+  }
+
+  const vowelScatter = vowelTokens.map((t) => ({ phoneme: t.phone.toUpperCase(), f1: t.f1_hz, f2: t.f2_hz }));
+  if (vowelMedians.length < 3) {
+    return {
+      vsaHz2: null,
+      nVowelTokens: vowelTokens.length,
+      nVowelTypes: vowelMedians.length,
+      vowelScatter,
+      vowelMedians,
+      hullPath: [],
+    };
+  }
+
+  const hullPath = convexHull(vowelMedians.map((m) => ({ f1: m.f1, f2: m.f2 })));
+  return {
+    vsaHz2: rnd(polygonArea(hullPath), 2),
+    nVowelTokens: vowelTokens.length,
+    nVowelTypes: vowelMedians.length,
+    vowelScatter,
+    vowelMedians,
+    hullPath,
+  };
+}
+
+function msttr(words: string[], window = 50): number {
+  if (!words.length) return 0;
+  if (words.length < window) return rnd(new Set(words).size / words.length, 3);
+  const chunks: number[] = [];
+  for (let i = 0; i <= words.length - window; i += window) {
+    chunks.push(new Set(words.slice(i, i + window)).size / window);
+  }
+  return rnd(chunks.length ? chunks.reduce((a, b) => a + b, 0) / chunks.length : 0, 3);
+}
+
+function computeNlp(whisperxData: unknown, duration: number): Partial<PictureMetrics> {
+  const result = (whisperxData as Record<string, unknown>)?.result as Record<string, unknown> | undefined;
+  if (!result) {
+    return {
+      nounRatio: null, verbRatio: null, adjAdvRatio: null, funcWordRatio: null,
+      lexicalDensity: null, msttr: null, meanSentenceLength: null, fillerWordRate: null,
+      totalWords: null, transcript: null,
+    };
+  }
+
+  const segments = Array.isArray(result.segments) ? result.segments as Array<{ text?: string }> : [];
+  const transcript = segments.map((s) => s.text ?? "").join(" ").replace(/\s+/g, " ").trim();
+  const words = transcript
+    .split(/\s+/)
+    .map((w) => cleanWord(w))
+    .filter(Boolean);
+  if (words.length < 5) {
+    return {
+      nounRatio: null, verbRatio: null, adjAdvRatio: null, funcWordRatio: null,
+      lexicalDensity: null, msttr: null, meanSentenceLength: null, fillerWordRate: null,
+      totalWords: null, transcript: transcript || null,
+    };
+  }
+
+  const total = words.length;
+  const verbCount = words.filter((w) =>
+    COMMON_VERBS.has(w) || /(ed|ing)$/.test(w)
+  ).length;
+  const adjAdvCount = words.filter((w) => /(ly|ous|ive|able|al|ic|ish)$/.test(w)).length;
+  const functionCount = words.filter((w) => FUNCTION_WORDS.has(w)).length;
+  const nounCount = Math.max(0, total - verbCount - adjAdvCount - functionCount);
+  const lexicalDensity = ((nounCount + verbCount + adjAdvCount) / total) * 100;
+  const sentencePieces = transcript.split(/[.!?]+/).map((s) => s.trim()).filter(Boolean);
+  const sentenceLens = sentencePieces.map((s) => s.split(/\s+/).filter(Boolean).length);
+  const fillerCount = words.filter((w) => FILLERS.has(w)).length;
+  const durMin = duration > 0 ? duration / 60 : 1;
+
+  return {
+    nounRatio: rnd((nounCount / total) * 100, 1),
+    verbRatio: rnd((verbCount / total) * 100, 1),
+    adjAdvRatio: rnd((adjAdvCount / total) * 100, 1),
+    funcWordRatio: rnd((functionCount / total) * 100, 1),
+    lexicalDensity: rnd(lexicalDensity, 1),
+    msttr: msttr(words, 50),
+    meanSentenceLength: rnd(sentenceLens.length ? sentenceLens.reduce((a, b) => a + b, 0) / sentenceLens.length : 0, 1),
+    fillerWordRate: rnd(fillerCount / durMin, 1),
+    totalWords: total,
+    transcript,
+  };
+}
+
 export function mapPictureDescription(
   intelligibilityData: unknown,
   naturalnessData: unknown,
-  sylberData: unknown
+  sylberData: unknown,
+  huperData?: unknown,
+  whisperxData?: unknown
 ): PictureMetrics {
   const syl = extractSylber(sylberData) ?? {};
   const syllables = Array.isArray(syl.segments) ? syl.segments : [];
@@ -254,5 +426,7 @@ export function mapPictureDescription(
     naturalnessScore: rnd(clamp((natRaw / 220) * 100, 0, 100), 1),
     speechRate: rnd(syl.SYL_PERSEC ?? 0, 2),
     pauseRate: computePauseRate(syllables, duration),
+    ...computeVsa(huperData),
+    ...computeNlp(whisperxData, duration),
   };
 }

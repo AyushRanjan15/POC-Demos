@@ -1,88 +1,126 @@
 "use client";
 
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   RadarChart, PolarGrid, PolarAngleAxis, Radar,
-  ResponsiveContainer, Cell, ReferenceLine,
+  ResponsiveContainer, Legend, Tooltip,
 } from "recharts";
 import { DDKMetrics, DaysMetrics, PictureMetrics, TaskResult } from "@/types";
+import { VsaChart } from "./VsaChart";
+import { NlpCharts } from "./NlpCharts";
 
-// ── Colour palette ────────────────────────────────────────────────────────────
+// ── Shared design tokens ──────────────────────────────────────────────────────
 const C = {
-  purple:  "#7c3aed",
-  violet:  "#a78bfa",
-  green:   "#10b981",
-  teal:    "#14b8a6",
-  amber:   "#f59e0b",
-  rose:    "#f43f5e",
-  blue:    "#3b82f6",
-  indigo:  "#6366f1",
-  slate:   "#64748b",
+  purple: "#7c3aed", green: "#10b981", teal: "#14b8a6",
+  amber:  "#f59e0b", rose:  "#ef4444", blue: "#3b82f6",
+  indigo: "#6366f1", slate: "#64748b", lime: "#84cc16",
 };
 
-// ── SVG half-circle gauge ─────────────────────────────────────────────────────
-function Gauge({ value, max = 100, label, unit = "%", color = C.purple, size = 160 }: {
-  value: number; max?: number; label: string; unit?: string; color?: string; size?: number;
-}) {
-  const pct   = Math.min(Math.max(value / max, 0), 1);
-  const r     = size * 0.38;
-  const cx    = size / 2;
-  const cy    = size * 0.54;
-  const start = Math.PI;
-  const end   = start + pct * Math.PI;
-  const x1 = cx + r * Math.cos(start);
-  const y1 = cy + r * Math.sin(start);
-  const x2 = cx + r * Math.cos(end);
-  const y2 = cy + r * Math.sin(end);
-  // Track is the full upper semicircle (left → top → right, CW, 180°).
-  // Colored arc always spans ≤ 180° so large-arc-flag must be 0.
-  // (Using 1 for pct > 0.5 incorrectly routes the arc through the bottom.)
-  const track = `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy}`;
-  const arc   = pct < 0.01 ? "" : `M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`;
+function scoreColor(v: number, lo = 70, hi = 85) {
+  if (v >= hi) return C.green;
+  if (v >= lo) return C.amber;
+  return C.rose;
+}
 
+// ── StatBadge — centred label / large value / optional sub ───────────────────
+function StatBadge({ label, value, sub, color = C.purple }: {
+  label: string; value: string; sub?: string; color?: string;
+}) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-      <svg width={size} height={size * 0.62} viewBox={`0 0 ${size} ${size * 0.62}`}>
-        <path d={track} fill="none" stroke="#e5e7eb" strokeWidth={size * 0.09} strokeLinecap="round" />
-        {arc && <path d={arc} fill="none" stroke={color} strokeWidth={size * 0.09} strokeLinecap="round" />}
-        <text x={cx} y={cy - 4} textAnchor="middle" fontSize={size * 0.20} fontWeight={700} fill="#111827">
-          {value.toFixed(1)}{unit}
-        </text>
-      </svg>
-      <p style={{ fontSize: "0.78rem", fontWeight: 600, color: "#374151", margin: 0, textAlign: "center" }}>{label}</p>
+    <div style={{
+      background: "#f8fafc", borderRadius: 10, padding: "10px 12px",
+      border: "1px solid #f1f5f9", textAlign: "center", flex: 1, minWidth: 90,
+    }}>
+      <p style={{ margin: 0, fontSize: "0.6rem", fontWeight: 700, textTransform: "uppercase",
+        letterSpacing: "0.07em", color: "#9ca3af" }}>{label}</p>
+      <p style={{ margin: "3px 0 0", fontSize: "1.25rem", fontWeight: 800, color, lineHeight: 1 }}>{value}</p>
+      {sub && <p style={{ margin: "2px 0 0", fontSize: "0.6rem", color: "#9ca3af" }}>{sub}</p>}
     </div>
+  );
+}
+
+// ── MetricBar — label + value + coloured progress bar + optional norm tick ───
+function MetricBar({ label, value, unit = "%", max = 100, color, normAt, lowIsBetter = false }: {
+  label: string; value: number; unit?: string; max?: number;
+  color: string; normAt?: number; lowIsBetter?: boolean;
+}) {
+  const fillPct = Math.min(Math.max(value / max * 100, 0), 100);
+  const normPct = normAt != null ? Math.min(normAt / max * 100, 100) : null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <span style={{ fontSize: "0.68rem", fontWeight: 600, color: "#374151" }}>{label}</span>
+        <span style={{ fontSize: "0.78rem", fontWeight: 800, color }}>{value.toFixed(1)}{unit}</span>
+      </div>
+      <div style={{ position: "relative", height: 7, borderRadius: 99, background: "#f1f5f9", overflow: "visible" }}>
+        <div style={{
+          height: "100%", width: `${fillPct}%`, background: color,
+          borderRadius: 99, transition: "width 0.5s ease",
+        }} />
+        {normPct != null && (
+          <div style={{
+            position: "absolute", top: -3, left: `${normPct}%`,
+            width: 2, height: 13, background: "#94a3b8",
+            borderRadius: 1, transform: "translateX(-50%)",
+          }} title={`Norm: ${normAt}${unit}`} />
+        )}
+      </div>
+      {normPct != null && (
+        <p style={{ margin: 0, fontSize: "0.58rem", color: "#9ca3af", textAlign: "right" }}>
+          norm {normAt}{unit}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── SectionLabel — small uppercase heading ────────────────────────────────────
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <p style={{
+      margin: "0 0 8px", fontSize: "0.68rem", fontWeight: 700, color: "#64748b",
+      textTransform: "uppercase", letterSpacing: "0.07em",
+    }}>{children}</p>
   );
 }
 
 // ── Days of the Week charts ───────────────────────────────────────────────────
 export function DaysCharts({ metrics }: { metrics: DaysMetrics }) {
-  const errorData = [
-    { name: "WER",  value: +(metrics.wer * 100).toFixed(1),             fill: C.rose },
-    { name: "PER",  value: +(metrics.phonemeErrorRate * 100).toFixed(1), fill: C.amber },
-  ];
+  const waColor  = scoreColor(metrics.wordAccuracy,    90, 95);
+  const paColor  = scoreColor(metrics.phonemeAccuracy, 78, 88);
+  const werColor = metrics.wer * 100 < 5 ? C.green : metrics.wer * 100 < 15 ? C.amber : C.rose;
+  const perColor = metrics.phonemeErrorRate * 100 < 12 ? C.green : metrics.phonemeErrorRate * 100 < 25 ? C.amber : C.rose;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Accuracy gauges */}
-      <div style={{ display: "flex", justifyContent: "space-around", flexWrap: "wrap", gap: 8 }}>
-        <Gauge value={metrics.wordAccuracy}    label="Word Accuracy"    color={C.purple} />
-        <Gauge value={metrics.phonemeAccuracy} label="Phoneme Accuracy" color={C.green}  />
-      </div>
-      {/* Error rate bar */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+
+      {/* Accuracy bars */}
       <div>
-        <p style={{ fontSize: "0.72rem", fontWeight: 700, color: C.slate, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 6px" }}>Error Rates</p>
-        <ResponsiveContainer width="100%" height={110}>
-          <BarChart data={errorData} layout="vertical" margin={{ left: 8, right: 24, top: 4, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-            <XAxis type="number" domain={[0, 30]} unit="%" tick={{ fontSize: 11 }} />
-            <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fontWeight: 600 }} width={34} />
-            <Tooltip formatter={(v) => [`${v}%`]} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
-            <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={22}>
-              {errorData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-            </Bar>
-            <ReferenceLine x={10} stroke="#94a3b8" strokeDasharray="4 3" label={{ value: "10%", fontSize: 10, fill: "#94a3b8" }} />
-          </BarChart>
-        </ResponsiveContainer>
+        <SectionLabel>Recognition Accuracy</SectionLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <MetricBar label="Word Accuracy"    value={metrics.wordAccuracy}    color={waColor} normAt={95} />
+          <MetricBar label="Phoneme Accuracy" value={metrics.phonemeAccuracy} color={paColor} normAt={85} />
+        </div>
       </div>
+
+      {/* Error rate badges */}
+      <div>
+        <SectionLabel>Error Rates</SectionLabel>
+        <div style={{ display: "flex", gap: 10 }}>
+          <StatBadge
+            label="Word Error Rate"
+            value={`${(metrics.wer * 100).toFixed(1)}%`}
+            sub="lower is better"
+            color={werColor}
+          />
+          <StatBadge
+            label="Phoneme Error Rate"
+            value={`${(metrics.phonemeErrorRate * 100).toFixed(1)}%`}
+            sub="lower is better"
+            color={perColor}
+          />
+        </div>
+      </div>
+
     </div>
   );
 }
@@ -90,187 +128,157 @@ export function DaysCharts({ metrics }: { metrics: DaysMetrics }) {
 // ── DDK charts ────────────────────────────────────────────────────────────────
 export function DDKCharts({ metrics }: { metrics: DDKMetrics }) {
   const positions = ["P", "A", "T", "A", "K", "A"];
-  const posData   = metrics.phonemeAccuracyByPos.map((v, i) => ({
-    pos: positions[i], accuracy: v,
-    fill: v >= 85 ? C.green : v >= 70 ? C.amber : C.rose,
-  }));
-
-  const perData = [
-    { name: "Best PER",        value: +(metrics.bestPer    * 100).toFixed(1) },
-    { name: "Mean PER (clean)", value: +(metrics.meanPerClean * 100).toFixed(1) },
-    { name: "Mean PER (all)",  value: +(metrics.meanPerAll  * 100).toFixed(1) },
-  ];
-
-  const rateData = [
-    { name: "Overall Rate",    value: metrics.overallDdkRateCps },
-    { name: "Best Clean Rate", value: metrics.bestCleanDdkRateCps },
-  ];
+  const _rc       = metrics.overallDdkRateCps >= 6.0 ? C.green : metrics.overallDdkRateCps >= 4.5 ? C.amber : C.rose;
+  const ioiColor  = metrics.ioiCv < 0.15 ? C.green : metrics.ioiCv < 0.25 ? C.amber : C.rose;
+  const cleanColor = scoreColor(metrics.cleanRatePct, 60, 80);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Stat row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
-        {[
-          { label: "Attempts",   value: metrics.nAttempts, unit: "" },
-          { label: "Clean",      value: metrics.nClean,    unit: "" },
-          { label: "Clean Rate", value: metrics.cleanRatePct, unit: "%" },
-          { label: "IOI Mean",   value: metrics.ioiMeanS,  unit: "s" },
-        ].map(({ label, value, unit }) => (
-          <div key={label} style={{ background: "#f5f3ff", borderRadius: 10, padding: "8px 10px", textAlign: "center" }}>
-            <p style={{ fontSize: "0.65rem", fontWeight: 700, color: C.purple, textTransform: "uppercase", letterSpacing: "0.06em", margin: 0 }}>{label}</p>
-            <p style={{ fontSize: "1.25rem", fontWeight: 800, color: "#111827", margin: "2px 0 0" }}>{value}{unit}</p>
-          </div>
-        ))}
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+
+      {/* Top stat badges */}
+      <div>
+        <SectionLabel>Syllable Repetition Metrics</SectionLabel>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <StatBadge label="Attempts"   value={`${metrics.nAttempts}`} sub="total"          color={C.slate}   />
+          <StatBadge label="Clean"      value={`${metrics.nClean}`}    sub="syllables"       color={C.indigo}  />
+          <StatBadge label="Clean Rate" value={`${metrics.cleanRatePct.toFixed(0)}%`} sub="norm ≥80%" color={cleanColor} />
+          <StatBadge label="DDK Rate"   value={`${metrics.overallDdkRateCps.toFixed(1)}`} sub="syl/s · norm 6" color={_rc} />
+          <StatBadge label="IOI CV"     value={metrics.ioiCv.toFixed(2)} sub="regularity"   color={ioiColor}  />
+        </div>
       </div>
 
       {/* Phoneme accuracy by position */}
       <div>
-        <p style={{ fontSize: "0.72rem", fontWeight: 700, color: C.slate, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 6px" }}>Phoneme Accuracy by Position</p>
-        <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={posData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="pos" tick={{ fontSize: 13, fontWeight: 700 }} />
-            <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
-            <Tooltip formatter={(v) =>[`${v}%`, "Accuracy"]} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
-            <ReferenceLine y={85} stroke={C.green}  strokeDasharray="4 3" label={{ value: "85%", fontSize: 9, fill: C.green, position: "right" }} />
-            <Bar dataKey="accuracy" radius={[4, 4, 0, 0]} barSize={28}>
-              {posData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <SectionLabel>Phoneme Accuracy by Position (PA-TA-KA)</SectionLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {metrics.phonemeAccuracyByPos.map((acc, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{
+                width: 22, height: 22, borderRadius: 6,
+                background: scoreColor(acc, 70, 85) + "22",
+                color: scoreColor(acc, 70, 85),
+                fontSize: "0.72rem", fontWeight: 800,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0,
+              }}>
+                {positions[i]}
+              </span>
+              <div style={{ flex: 1 }}>
+                <div style={{ position: "relative", height: 7, borderRadius: 99, background: "#f1f5f9" }}>
+                  <div style={{
+                    height: "100%", width: `${acc}%`,
+                    background: scoreColor(acc, 70, 85),
+                    borderRadius: 99,
+                  }} />
+                  {/* 85% norm line */}
+                  <div style={{
+                    position: "absolute", top: -3, left: "85%",
+                    width: 2, height: 13, background: "#94a3b8", borderRadius: 1,
+                  }} />
+                </div>
+              </div>
+              <span style={{
+                fontSize: "0.72rem", fontWeight: 800, width: 44, textAlign: "right",
+                color: scoreColor(acc, 70, 85),
+              }}>{acc.toFixed(1)}%</span>
+            </div>
+          ))}
+          <p style={{ margin: "2px 0 0", fontSize: "0.58rem", color: "#9ca3af", textAlign: "right" }}>
+            grey tick = 85% norm
+          </p>
+        </div>
       </div>
 
-      {/* DDK rate + PER side by side */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div>
-          <p style={{ fontSize: "0.72rem", fontWeight: 700, color: C.slate, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 6px" }}>DDK Rate (cps)</p>
-          <ResponsiveContainer width="100%" height={130}>
-            <BarChart data={rateData} margin={{ top: 4, right: 4, left: 0, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={0} angle={-12} textAnchor="end" />
-              <YAxis domain={[0, 10]} unit="" tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(v) =>[`${v} cps`]} contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={28} fill={C.indigo} />
-              <ReferenceLine y={6} stroke={C.green} strokeDasharray="4 3" label={{ value: "Norm", fontSize: 9, fill: C.green, position: "right" }} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <div>
-          <p style={{ fontSize: "0.72rem", fontWeight: 700, color: C.slate, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 6px" }}>Phoneme Error Rate</p>
-          <ResponsiveContainer width="100%" height={130}>
-            <BarChart data={perData} layout="vertical" margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-              <XAxis type="number" domain={[0, 30]} unit="%" tick={{ fontSize: 10 }} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={80} />
-              <Tooltip formatter={(v) =>[`${v}%`]} contentStyle={{ borderRadius: 8, fontSize: 11 }} />
-              <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={18} fill={C.rose} />
-            </BarChart>
-          </ResponsiveContainer>
+      {/* Rate + timing */}
+      <div>
+        <SectionLabel>Timing</SectionLabel>
+        <div style={{ display: "flex", gap: 8 }}>
+          <StatBadge label="IOI Mean"       value={`${metrics.ioiMeanS.toFixed(3)}s`}  sub="inter-onset interval" color={C.slate}  />
+          <StatBadge label="Best Clean Rate" value={`${metrics.bestCleanDdkRateCps.toFixed(1)}`} sub="syl/s peak" color={C.indigo} />
+          <StatBadge label="Best PER"        value={`${(metrics.bestPer * 100).toFixed(1)}%`}    sub="phoneme err" color={C.slate}  />
         </div>
       </div>
+
     </div>
   );
 }
 
 // ── Picture Description charts ────────────────────────────────────────────────
 export function PictureCharts({ metrics }: { metrics: PictureMetrics }) {
-  const rateData = [
-    { name: "Speech Rate (syl/s)", value: metrics.speechRate },
-    { name: "Pause Rate (/min)",   value: metrics.pauseRate  },
-  ];
+  const intColor   = scoreColor(metrics.intelligibilityScore, 70, 85);
+  const natColor   = scoreColor(metrics.naturalnessScore,     65, 80);
+  const rateColor  = metrics.speechRate >= 4.5 ? C.green : metrics.speechRate >= 3.0 ? C.amber : C.rose;
+  const pauseColor = metrics.pauseRate  <= 10  ? C.green : metrics.pauseRate  <= 20   ? C.amber : C.rose;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-around", flexWrap: "wrap", gap: 8 }}>
-        <Gauge value={metrics.intelligibilityScore} label="Intelligibility" color={C.purple} />
-        <Gauge value={metrics.naturalnessScore}     label="Naturalness"    color={C.teal}   />
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+
+      {/* Intelligibility + Naturalness bars */}
       <div>
-        <p style={{ fontSize: "0.72rem", fontWeight: 700, color: C.slate, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 6px" }}>Speech Dynamics</p>
-        <ResponsiveContainer width="100%" height={130}>
-          <BarChart data={rateData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} />
-            <Tooltip contentStyle={{ borderRadius: 8, fontSize: 12 }} />
-            <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={36}>
-              <Cell fill={C.blue} />
-              <Cell fill={C.amber} />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <SectionLabel>Perceptual Quality</SectionLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <MetricBar label="Intelligibility" value={metrics.intelligibilityScore} color={intColor}  normAt={85} />
+          <MetricBar label="Naturalness"     value={metrics.naturalnessScore}     color={natColor}  normAt={80} />
+        </div>
       </div>
+
+      {/* Speech dynamics badges */}
+      <div>
+        <SectionLabel>Speech Dynamics</SectionLabel>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <StatBadge label="Speech Rate" value={`${metrics.speechRate.toFixed(1)}`}  sub="syl/s · norm 4.5" color={rateColor}  />
+          <StatBadge label="Pause Rate"  value={`${metrics.pauseRate.toFixed(1)}`}   sub="/min · norm <20"  color={pauseColor} />
+          {metrics.vsaHz2 != null && (
+            <StatBadge label="VSA" value={`${(metrics.vsaHz2 / 1000).toFixed(0)}k`} sub="Hz² · norm 280k"  color={C.indigo}   />
+          )}
+        </div>
+      </div>
+
+      {/* Vowel Space scatter */}
+      <div>
+        <SectionLabel>Vowel Space — F1 × F2</SectionLabel>
+        <VsaChart metrics={metrics} />
+      </div>
+
+      {/* Language / NLP */}
+      <div>
+        <SectionLabel>Language Analysis</SectionLabel>
+        <NlpCharts metrics={metrics} />
+      </div>
+
     </div>
   );
 }
 
-// ── Summary radar — key metric per task ───────────────────────────────────────
+// ── Summary radar — kept for PDF capture only, not shown on screen ────────────
 const TASK_SHORT: Record<string, string> = {
-  days_of_week:      "Days",
-  ddk:               "DDK",
-  picture_description: "Picture",
+  days_of_week: "Days", ddk: "DDK", picture_description: "Picture",
 };
 
 export function SummaryRadarChart({ results }: { results: TaskResult[] }) {
-  // One radar axis per task, key representative metric normalised 0-100
   const metrics = [
-    {
-      axis: "Word Acc.",
-      getValue: (r: TaskResult) =>
-        r.taskId === "days_of_week" ? (r.metrics as DaysMetrics).wordAccuracy : null,
-    },
-    {
-      axis: "Phoneme Acc.",
-      getValue: (r: TaskResult) =>
-        r.taskId === "days_of_week" ? (r.metrics as DaysMetrics).phonemeAccuracy : null,
-    },
-    {
-      axis: "DDK Rate",
-      getValue: (r: TaskResult) =>
-        r.taskId === "ddk" ? Math.min((r.metrics as DDKMetrics).overallDdkRateCps / 9 * 100, 100) : null,
-    },
-    {
-      axis: "Clean Rate",
-      getValue: (r: TaskResult) =>
-        r.taskId === "ddk" ? (r.metrics as DDKMetrics).cleanRatePct : null,
-    },
-    {
-      axis: "Intelligibility",
-      getValue: (r: TaskResult) =>
-        r.taskId === "picture_description" ? (r.metrics as PictureMetrics).intelligibilityScore : null,
-    },
-    {
-      axis: "Naturalness",
-      getValue: (r: TaskResult) =>
-        r.taskId === "picture_description" ? (r.metrics as PictureMetrics).naturalnessScore : null,
-    },
+    { axis: "Word Acc.",      getValue: (r: TaskResult) => r.taskId === "days_of_week" ? (r.metrics as DaysMetrics).wordAccuracy : null },
+    { axis: "Phoneme Acc.",   getValue: (r: TaskResult) => r.taskId === "days_of_week" ? (r.metrics as DaysMetrics).phonemeAccuracy : null },
+    { axis: "DDK Rate",       getValue: (r: TaskResult) => r.taskId === "ddk" ? Math.min((r.metrics as DDKMetrics).overallDdkRateCps / 9 * 100, 100) : null },
+    { axis: "Clean Rate",     getValue: (r: TaskResult) => r.taskId === "ddk" ? (r.metrics as DDKMetrics).cleanRatePct : null },
+    { axis: "Intelligibility",getValue: (r: TaskResult) => r.taskId === "picture_description" ? (r.metrics as PictureMetrics).intelligibilityScore : null },
+    { axis: "Naturalness",    getValue: (r: TaskResult) => r.taskId === "picture_description" ? (r.metrics as PictureMetrics).naturalnessScore : null },
   ];
-
-  // Flatten into radar data: one row per axis, one column per task
   const data = metrics.map(({ axis, getValue }) => {
     const row: Record<string, string | number> = { axis };
-    results.forEach((r) => {
-      const v = getValue(r);
-      row[TASK_SHORT[r.taskId] || r.taskId] = v ?? 0;
-    });
+    results.forEach((r) => { const v = getValue(r); row[TASK_SHORT[r.taskId] || r.taskId] = v ?? 0; });
     return row;
   });
-
   const colors = [C.purple, C.green, C.amber];
-
   return (
     <ResponsiveContainer width="100%" height={280}>
       <RadarChart data={data} margin={{ top: 8, right: 24, bottom: 8, left: 24 }}>
         <PolarGrid stroke="#e5e7eb" />
         <PolarAngleAxis dataKey="axis" tick={{ fontSize: 11 }} />
         {results.map((r, i) => (
-          <Radar
-            key={r.taskId}
-            name={TASK_SHORT[r.taskId] || r.taskId}
+          <Radar key={r.taskId} name={TASK_SHORT[r.taskId] || r.taskId}
             dataKey={TASK_SHORT[r.taskId] || r.taskId}
-            stroke={colors[i % colors.length]}
-            fill={colors[i % colors.length]}
-            fillOpacity={0.18}
-          />
+            stroke={colors[i % colors.length]} fill={colors[i % colors.length]} fillOpacity={0.18} />
         ))}
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 12 }} />

@@ -36,12 +36,15 @@ export async function processAudio(
   }
 
   if (taskId === "picture_description") {
-    const [intelligibilityRaw, naturalnessRaw, sylberRaw] = await Promise.all([
+    const [intelligibilityRaw, naturalnessRaw, sylberRaw, huperRaw, whisperxRaw] = await Promise.all([
       runModel("als-intelligibility-mtpa", assetId),
       runModel("als-naturalness-mtpa", assetId),
       runModel("sylber-time", assetId),
+      runModel("huper-phoneme-pipeline", assetId),
+      runModel("whisperx", assetId),
     ]);
-    return mapPictureDescription(intelligibilityRaw, naturalnessRaw, sylberRaw);
+    const whisperxData = await resolveWhisperxResult(whisperxRaw);
+    return mapPictureDescription(intelligibilityRaw, naturalnessRaw, sylberRaw, huperRaw, whisperxData);
   }
 
   throw new Error(`Unknown task: ${taskId}`);
@@ -102,5 +105,15 @@ function simulateMetrics(taskId: TaskName): TaskMetrics {
     naturalnessScore:     rnd(r(60, 95), 1),
     speechRate:           rnd(r(2.8, 5.2)),
     pauseRate:            rnd(r(4, 18)),
+    msttr: rnd(r(0.66, 0.82), 3),
+    lexicalDensity: rnd(r(40, 58), 1),
+    verbRatio: rnd(r(14, 22), 1),
+    meanSentenceLength: rnd(r(9, 16), 1),
+    fillerWordRate: rnd(r(0, 6), 1),
+    nounRatio: rnd(r(18, 26), 1),
+    adjAdvRatio: rnd(r(5, 12), 1),
+    funcWordRatio: rnd(r(32, 44), 1),
+    totalWords: Math.round(r(45, 120)),
+    transcript: "The picture shows a kitchen scene with a woman at the sink and two children reaching for cookies.",
   } satisfies PictureMetrics;
 }

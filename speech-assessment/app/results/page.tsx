@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef } from "react";
 import { SessionResults, DaysMetrics, DDKMetrics, PictureMetrics, TaskResult } from "@/types";
-import { DaysCharts, DDKCharts, PictureCharts, SummaryRadarChart } from "@/components/charts/MetricsChart";
+import { DaysCharts, DDKCharts, PictureCharts } from "@/components/charts/MetricsChart";
+import { DomainSummary, computeDomainScores } from "@/components/charts/DomainSummary";
 
 const TASK_LABELS: Record<string, string> = {
   days_of_week:       "Days of the Week",
@@ -41,12 +42,25 @@ const GLOSSARY: {
     ],
   },
   {
-    title: "Picture Description", color: "#3b82f6",
+    title: "Picture Description — Acoustics", color: "#3b82f6",
     metrics: [
       { name: "Intelligibility Score", meaning: "Estimated proportion of speech that a naïve listener can understand. Scores above 90% are generally within functional communication range for everyday interaction." },
       { name: "Naturalness Score", meaning: "Perceptual measure of how natural and fluent the speech sounds, accounting for prosody, rate consistency, and voice quality. Sensitive to dysarthric or dysprosodic patterns." },
       { name: "Speech Rate", abbr: "syl/s", meaning: "Syllables produced per second during active speech segments (pauses excluded). The typical conversational range is 3–6 syllables/second; values outside this range may indicate motor or respiratory involvement." },
       { name: "Pause Rate", abbr: "/min", meaning: "Number of pauses per minute of speech. Elevated pause rates may reflect word-finding difficulty, reduced respiratory support, or speech motor planning deficits." },
+      { name: "Vowel Space Area", abbr: "VSA (Hz²)", meaning: "Area of the convex hull enclosing the median F1/F2 formant positions of each vowel type. A larger VSA reflects greater acoustic contrast between vowels; reduced VSA is associated with hypokinetic or dysarthric speech where vowels converge toward a centralised position." },
+    ],
+  },
+  {
+    title: "Picture Description — Language", color: "#8b5cf6",
+    metrics: [
+      { name: "Noun Ratio", abbr: "noun%", meaning: "Percentage of all spoken words that are nouns. Reduced noun ratio may reflect anomia (word-finding difficulty) common in aphasia and early dementia." },
+      { name: "Verb Ratio", abbr: "verb%", meaning: "Percentage of words that are verbs. Low verb ratio is associated with agrammatism in Broca's aphasia; clinical norms are approximately 15–20% for picture description." },
+      { name: "Adj / Adv Ratio", abbr: "adj+adv%", meaning: "Combined proportion of adjectives and adverbs, reflecting descriptive elaboration. Reduced values may indicate impoverished propositional content." },
+      { name: "Lexical Density", meaning: "Proportion of content words (nouns, verbs, adjectives, adverbs) to total words. Typical spontaneous speech is 45–60%. Values below 40% suggest heavy reliance on grammatical function words with limited informational content." },
+      { name: "Lexical Diversity (MSTTR)", abbr: "MSTTR", meaning: "Moving-window Type-Token Ratio — proportion of unique words in successive 50-word windows. Values near 0.70 are typical for healthy adults; lower values indicate repetitive or restricted vocabulary, seen in semantic dementia and some aphasia types." },
+      { name: "Mean Sentence Length", meaning: "Average number of words per sentence. Shorter mean sentence length can reflect simplified syntax or fragmented utterances associated with motor speech or cognitive-linguistic impairment." },
+      { name: "Filler Word Rate", abbr: "/min", meaning: "Rate of filler words (um, uh, like, so) per minute. Elevated filler rates reflect word-finding pauses and are sensitive to early language impairment, anxiety, or reduced processing speed." },
     ],
   },
 ];
@@ -82,11 +96,11 @@ export default function ResultsPage() {
   const [exporting,    setExporting]    = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
 
-  // One ref per task chart section + summary
+  // One ref per task chart section + domain summary
   const daysRef    = useRef<HTMLDivElement>(null);
   const ddkRef     = useRef<HTMLDivElement>(null);
   const pictureRef = useRef<HTMLDivElement>(null);
-  const summaryRef = useRef<HTMLDivElement>(null);
+  const domainRef  = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const raw = sessionStorage.getItem("speechAssessmentResults");
@@ -187,17 +201,14 @@ export default function ResultsPage() {
         doc.setFont("helvetica","bold"); doc.setFontSize(6); doc.setTextColor(109,40,217); doc.text(label, x, y+7);
         doc.setFontSize(10); doc.setTextColor(17,24,39); doc.text(value, x, y+17);
       });
-      y += 22 + 7;
+      y += 22 + 10;
 
-      // ── Summary section: capture radar ───────────────────────────────────
-      y = sectionTitle("Overall Performance Summary", y);
-      if (summaryRef.current) {
-        const cap = await captureEl(summaryRef.current, html2canvas);
+      // ── Overall performance summary (visual capture) ──────────────────────
+      if (domainRef.current) {
+        const cap = await captureEl(domainRef.current, html2canvas);
         if (cap) {
           const h = (cap.h / cap.w) * CW;
           y = maybeNewPage(y, h + 4);
-          doc.setFillColor(255,255,255); doc.setDrawColor(229,231,235); doc.setLineWidth(0.3);
-          doc.roundedRect(M, y, CW, h, 3, 3, "FD");
           doc.addImage(cap.data, "PNG", M, y, CW, h);
           y += h + 8;
         }
@@ -235,10 +246,15 @@ export default function ResultsPage() {
           ref: pictureRef,
           rows: picture ? (() => {
             const m = picture.metrics as PictureMetrics;
-            return [
+            const rows: string[][] = [
               ["Intelligibility", `${m.intelligibilityScore.toFixed(1)}%`, "Naturalness", `${m.naturalnessScore.toFixed(1)}%`],
               ["Speech Rate", `${m.speechRate.toFixed(2)} syl/s`, "Pause Rate", `${m.pauseRate.toFixed(1)} /min`],
             ];
+            if (m.vsaHz2 != null) rows.push(["Vowel Space Area", `${m.vsaHz2.toLocaleString()} Hz²`, "Vowel Types", String(m.nVowelTypes ?? "—")]);
+            if (m.msttr != null) rows.push(["MSTTR", String(m.msttr), "Lexical Density", `${m.lexicalDensity}%`]);
+            if (m.nounRatio != null) rows.push(["Noun Ratio", `${m.nounRatio}%`, "Verb Ratio", `${m.verbRatio}%`]);
+            if (m.meanSentenceLength != null) rows.push(["Mean Sentence Length", `${m.meanSentenceLength} words`, "Filler Rate", `${m.fillerWordRate} /min`]);
+            return rows;
           })() : [],
         },
       ];
@@ -419,13 +435,13 @@ export default function ResultsPage() {
           </div>
         </div>
 
-        {/* Summary radar */}
-        <div style={cardStyle}>
+        {/* Domain summary — replaces radar */}
+        <div style={cardStyle} ref={domainRef}>
           <p style={{ fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>Overall Performance Summary</p>
-          <p style={{ fontSize: "0.75rem", color: "#9ca3af", margin: "0 0 8px" }}>Normalised key metrics across all tasks</p>
-          <div ref={summaryRef}>
-            <SummaryRadarChart results={taskResults} />
-          </div>
+          <p style={{ fontSize: "0.75rem", color: "#9ca3af", margin: "0 0 12px" }}>
+            Domain scores normalised to healthy adult norms
+          </p>
+          <DomainSummary results={taskResults} />
         </div>
 
         {/* Days of the Week */}
